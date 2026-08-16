@@ -676,8 +676,8 @@ async function ensureTesseract(){
 
 async function ensurePdfJs(){
   if (window.pdfjsLib) return;
-  await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.js');
-  window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.js';
+  await loadScript('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/legacy/build/pdf.min.js');
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/legacy/build/pdf.worker.min.js';
 }
 
 /** מחלץ טקסט אמיתי מה-PDF (קבלה דיגיטלית). מחזיר גם את אובייקט ה-pdf למקרה שנצטרך OCR כגיבוי. */
@@ -778,7 +778,7 @@ receiptFile.addEventListener('change', async (e) => {
       : 'לא זוהו פריטים ברורים. אפשר לנסות תמונה/קובץ אחר.';
   } catch(err) {
     console.error(err);
-    statusEl.textContent = 'שגיאה בזיהוי הקבלה. נסו קובץ אחר.';
+    statusEl.textContent = `שגיאה: ${err?.message || 'לא ידועה'}. נסו קובץ אחר, או פנו עם הפרטים האלה.`;
   }
   receiptFile.value = '';
 });
