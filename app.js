@@ -710,21 +710,34 @@ async function ocrPdfFirstPage(pdf){
 }
 
 const STORE_NAMES = ['שופרסל','רמי לוי','קרפור','carrefour','ויקטורי','victory','יינות ביתן','טיב טעם','אושר עד','חצי חינם','מגה בעיר','מגה','yellow','am:pm','סופר פארם','super-pharm','היפר כהן','זול ובגדול','פרש מרקט'];
-const RECEIPT_SKIP = /(סה"?כ|סהכ|total|לתשלום|עודף|מזומן|אשראי|תודה|receipt|קבלה|עוסק|מס\s*עוסק|ח\.פ|טלפון|כתובת|תאריך|שעה|קופה|קופאי|invoice|תשלום|מע"?מ|עגלה|פריטים|כמות)/i;
+const RECEIPT_SKIP = /(סה"?כ|סהכ|total|לתשלום|עודף|מזומן|אשראי|תודה|receipt|קבלה|עוסק|מס\s*עוסק|ח\.פ|טלפון|כתובת|תאריך|שעה|קופה|קופאי|invoice|תשלום|מע"?מ|עגלה|פריטים|כמות|מספר\s*(קבלה|קופה|עסקה|הזמנה|עסק)|מס\.?\s*כספית|תוכנה|UID|RRN|ATC|TVR|AID|שובר|עסקה|סכום\s*עיסקה|מטבע|verified|עותק\s*ללקוח|ולהתראות|VISA|MAX|CTL|EMV|רגיל)/i;
 
-function parseReceipt(text){
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-  let store = null;
-  for (const line of lines.slice(0, 8)) {
-    const found = STORE_NAMES.find(s => line.toLowerCase().includes(s.toLowerCase()));
-    if (found) { store = found; break; }
+/** מנתח קבלה דיגיטלית שבה כל פריט מופיע כשלוש שורות: שם, ברקוד (שורה של ספרות בלבד), ואז שורת כמות/מחיר. */
+function parseReceiptTableFormat(lines){
+  const items = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^\d{5,14}$/.test(lines[i])) continue; // שורת ברקוד = עוגן
+    const nameLine = lines[i - 1];
+    if (!nameLine || /^\d+$/.test(nameLine) || RECEIPT_SKIP.test(nameLine)) continue;
+
+    let priceInfo = null;
+    for (let j = i + 1; j <= Math.min(i + 2, lines.length - 1); j++) {
+      const l = lines[j];
+      const weightMatch = l.match(/(\d+(?:\.\d+)?)\s*ק"?ג\s*x\s*(\d+(?:\.\d+)?)\s*₪\s*(\d+(?:\.\d+)?)/);
+      if (weightMatch) { priceInfo = { qty: parseFloat(weightMatch[1]) || 1, price: parseFloat(weightMatch[3]) }; break; }
+      const unitMatch = l.match(/₪\s*(\d+(?:\.\d+)?)\s*(\d+)?\s*$/);
+      if (unitMatch) { priceInfo = { qty: unitMatch[2] ? parseInt(unitMatch[2]) : 1, price: parseFloat(unitMatch[1]) }; break; }
+    }
+    if (!priceInfo || !priceInfo.price || priceInfo.price <= 0 || priceInfo.price > 2000) continue;
+
+    const match = matchProduct(nameLine);
+    items.push({ raw: nameLine, name: match ? match.name : nameLine, category: match ? match.category : 'other', price: priceInfo.price, qty: priceInfo.qty });
   }
-  if (!store) store = lines[0] || 'חנות לא ידועה';
+  return items;
+}
 
-  let total = null;
-  const totalLine = lines.find(l => /(סה"?כ|לתשלום|total)/i.test(l));
-  if (totalLine) { const m = totalLine.match(/(\d{1,4}[.,]\d{2})/); if (m) total = parseFloat(m[1].replace(',', '.')); }
-
+/** גיבוי: פורמט פשוט יותר של שורה אחת לפריט "שם .... מחיר" (נפוץ בקבלות מצולמות/OCR) */
+function parseReceiptSingleLineFormat(lines){
   const items = [];
   for (const line of lines) {
     if (RECEIPT_SKIP.test(line)) continue;
@@ -734,8 +747,33 @@ function parseReceipt(text){
     let price = parseFloat(m[2].replace(',', '.'));
     if (!name || price <= 0 || price > 800 || /^\d+$/.test(name)) continue;
     const match = matchProduct(name);
-    items.push({ raw: line, name: match ? match.name : name, category: match ? match.category : 'other', price });
+    items.push({ raw: line, name: match ? match.name : name, category: match ? match.category : 'other', price, qty: 1 });
   }
+  return items;
+}
+
+function parseReceipt(text){
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+  let store = null;
+  for (const line of lines.slice(0, 15)) {
+    const found = STORE_NAMES.find(s => line.toLowerCase().includes(s.toLowerCase()));
+    if (found) { store = found; break; }
+  }
+  if (!store) store = lines[0] || 'חנות לא ידועה';
+
+  let total = null;
+  const totalIdx = lines.findIndex(l => /(סה"?כ|לתשלום|total)/i.test(l));
+  if (totalIdx >= 0) {
+    for (let i = totalIdx; i < Math.min(totalIdx + 2, lines.length); i++) {
+      const m = lines[i].match(/(\d{1,3}(?:,\d{3})*\.\d{2})/);
+      if (m) { total = parseFloat(m[1].replace(/,/g, '')); break; }
+    }
+  }
+
+  let items = parseReceiptTableFormat(lines);
+  if (!items.length) items = parseReceiptSingleLineFormat(lines);
+
   return { store, total, items };
 }
 
