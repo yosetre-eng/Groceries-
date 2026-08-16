@@ -681,7 +681,9 @@ async function ensurePdfJs(){
   window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/legacy/build/pdf.worker.min.mjs';
 }
 
-/** מחלץ טקסט אמיתי מה-PDF (קבלה דיגיטלית). מחזיר גם את אובייקט ה-pdf למקרה שנצטרך OCR כגיבוי. */
+/** מחלץ טקסט אמיתי מה-PDF (קבלה דיגיטלית), ומשחזר שבירות שורה לפי מיקום אנכי (Y) של כל קטע טקסט -
+ *  כי pdf.js לא מחזיר שבירות שורה מובנות, רק רשימת קטעי טקסט עם קואורדינטות. בלי זה כל העמוד
+ *  היה הופך לשורה אחת ארוכה, מה שהרס את מבנה "שם/ברקוד/מחיר" שהפרסר מזהה. */
 async function extractPdfText(file){
   await ensurePdfJs();
   const buf = await file.arrayBuffer();
@@ -690,7 +692,18 @@ async function extractPdfText(file){
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    fullText += content.items.map(it => it.str).join(' ') + '\n';
+    let lastY = null;
+    let line = '';
+    for (const item of content.items) {
+      const y = item.transform[5];
+      if (lastY !== null && Math.abs(y - lastY) > 2) {
+        if (line.trim()) fullText += line.trim() + '\n';
+        line = '';
+      }
+      line += item.str + ' ';
+      lastY = y;
+    }
+    if (line.trim()) fullText += line.trim() + '\n';
   }
   return { text: fullText, pdf };
 }
@@ -712,13 +725,14 @@ async function ocrPdfFirstPage(pdf){
 const STORE_NAMES = ['שופרסל','רמי לוי','קרפור','carrefour','ויקטורי','victory','יינות ביתן','טיב טעם','אושר עד','חצי חינם','מגה בעיר','מגה','yellow','am:pm','סופר פארם','super-pharm','היפר כהן','זול ובגדול','פרש מרקט'];
 const RECEIPT_SKIP = /(סה"?כ|סהכ|total|לתשלום|עודף|מזומן|אשראי|תודה|receipt|קבלה|עוסק|מס\s*עוסק|ח\.פ|טלפון|כתובת|תאריך|שעה|קופה|קופאי|invoice|תשלום|מע"?מ|עגלה|פריטים|כמות|מספר\s*(קבלה|קופה|עסקה|הזמנה|עסק)|מס\.?\s*כספית|תוכנה|UID|RRN|ATC|TVR|AID|שובר|עסקה|סכום\s*עיסקה|מטבע|verified|עותק\s*ללקוח|ולהתראות|VISA|MAX|CTL|EMV|רגיל)/i;
 
-/** מנתח קבלה דיגיטלית שבה כל פריט מופיע כשלוש שורות: שם, ברקוד (שורה של ספרות בלבד), ואז שורת כמות/מחיר. */
+/** מנתח קבלה דיגיטלית שבה כל פריט מופיע כשלוש שורות: שם, ברקוד/קוד פריט (שורת ספרות בלבד), ואז שורת כמות/מחיר. */
 function parseReceiptTableFormat(lines){
   const items = [];
   for (let i = 0; i < lines.length; i++) {
-    if (!/^\d{5,14}$/.test(lines[i])) continue; // שורת ברקוד = עוגן
-    const nameLine = lines[i - 1];
+    if (!/^\d{4,14}$/.test(lines[i])) continue; // שורת ברקוד/קוד = עוגן (חלק מהמוצרים משתמשים בקוד פנימי קצר של 4 ספרות)
+    let nameLine = lines[i - 1];
     if (!nameLine || /^\d+$/.test(nameLine) || RECEIPT_SKIP.test(nameLine)) continue;
+    nameLine = nameLine.replace(/^\*+\s*/, '').trim(); // הסרת סימוני "**" שמסמנים מבצע
 
     let priceInfo = null;
     for (let j = i + 1; j <= Math.min(i + 2, lines.length - 1); j++) {
