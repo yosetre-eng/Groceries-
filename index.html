@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>הרשימה שלנו</title>
+<meta name="theme-color" content="#1F2E28">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Suez+One&family=Heebo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#1F2E28; --bg-2:#233A30; --surface:#28382F; --surface-2:#32453A;
+    --text:#F2EFE6; --text-muted:#AAB8AE; --accent:#D9A441; --accent-dim:#8A6E30;
+    --leaf:#7FA57A; --danger:#C0533E; --chalk-line:rgba(242,239,230,0.16); --radius:14px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0;}
+  body{
+    background:
+      radial-gradient(ellipse at 20% 0%, rgba(255,255,255,0.04), transparent 60%),
+      radial-gradient(ellipse at 90% 10%, rgba(255,255,255,0.03), transparent 50%),
+      var(--bg);
+    color:var(--text); font-family:'Heebo', sans-serif; min-height:100vh; padding-bottom:100px;
+  }
+  h1,h2,.display{ font-family:'Suez One', 'Heebo', sans-serif; font-weight:400; }
+
+  header{ padding:22px 18px 14px; position:relative; }
+  header::after{
+    content:""; display:block; height:10px; margin-top:16px;
+    background-image: repeating-linear-gradient(115deg, var(--chalk-line) 0 3px, transparent 3px 14px);
+    opacity:0.7;
+  }
+  .title-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  h1{ font-size:28px; margin:0; letter-spacing:0.5px; }
+  .header-actions{ display:flex; gap:8px; }
+  .icon-btn{
+    width:38px; height:38px; border-radius:10px; background:var(--surface);
+    border:1px solid var(--chalk-line); color:var(--text); font-size:18px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .subtitle{ color:var(--text-muted); font-size:13px; margin-top:4px; }
+  .profiles{ display:flex; gap:8px; margin-top:14px; }
+  .chip{
+    padding:7px 16px; border-radius:999px; border:1px solid var(--chalk-line);
+    background:var(--surface); color:var(--text-muted); font-size:14px; font-weight:600;
+    cursor:pointer; transition:all .15s ease; user-select:none;
+  }
+  .chip.active{ background:var(--accent); border-color:var(--accent); color:#241a05; }
+
+  .cart-wrap{
+    margin:18px 18px 4px; padding:14px 16px; background:var(--surface);
+    border-radius:var(--radius); border:1px solid var(--chalk-line);
+  }
+  .cart-top{ display:flex; justify-content:space-between; align-items:center; font-size:13px; color:var(--text-muted); margin-bottom:8px;}
+  .cart-top b{ color:var(--text); font-weight:700; }
+  #budgetText{ color:var(--accent); font-weight:700; }
+  .track{ position:relative; height:10px; border-radius:999px; background:var(--bg-2); overflow:hidden; }
+  .fill{ position:absolute; inset:0 auto 0 0; width:0%; background:linear-gradient(90deg, var(--leaf), var(--accent)); border-radius:999px; transition:width .35s ease; }
+
+  .quick-add{ display:none; gap:8px; overflow-x:auto; margin:14px 18px 0; padding-bottom:4px; }
+  .qa-chip{
+    flex-shrink:0; padding:7px 14px; border-radius:999px; background:var(--surface-2);
+    border:1px dashed var(--accent-dim); color:var(--accent); font-size:13px; font-weight:600; cursor:pointer;
+  }
+
+  .add-box{ margin:16px 18px; padding:14px; background:var(--surface); border-radius:var(--radius); border:1px solid var(--chalk-line); }
+  .add-row{ display:flex; gap:8px; }
+  input[type=text], input[type=number], select, textarea{
+    font-family:'Heebo', sans-serif; background:var(--bg-2); color:var(--text);
+    border:1px solid var(--chalk-line); border-radius:10px; padding:11px 12px; font-size:15px; outline:none;
+  }
+  input[type=text]{ flex:1; min-width:0; }
+  input[type=text]::placeholder, textarea::placeholder{ color:var(--text-muted); }
+  select{ max-width:150px; }
+  .add-row2{ display:flex; gap:8px; margin-top:8px; align-items:center; }
+  input[type=number]{ width:70px; }
+  #priceHint{ font-size:12px; color:var(--text-muted); margin-right:auto; }
+  button{ font-family:'Heebo', sans-serif; cursor:pointer; border:none; }
+  .btn-add{ background:var(--accent); color:#241a05; font-weight:700; font-size:15px; border-radius:10px; padding:0 18px; flex-shrink:0; }
+  .btn-add:active{ transform:scale(0.97); }
+
+  main{ padding:6px 18px 0; }
+  .category{ margin-top:22px; }
+  .cat-head{ display:flex; align-items:center; gap:8px; margin-bottom:10px; position:relative; padding-bottom:8px; }
+  .cat-head::after{
+    content:""; position:absolute; left:0; right:0; bottom:0; height:6px;
+    background-image: repeating-linear-gradient(-8deg, transparent 0 8px, var(--chalk-line) 8px 9px);
+  }
+  .cat-icon{ font-size:20px; }
+  .cat-title{ font-size:17px; font-weight:700; }
+  .cat-count{ margin-right:auto; font-size:12px; color:var(--text-muted); background:var(--surface); padding:2px 10px; border-radius:999px; }
+  .reorder{ display:flex; flex-direction:column; gap:1px; }
+  .reorder-btn{ background:none; color:var(--text-muted); font-size:10px; padding:1px 4px; line-height:1; }
+  .reorder-btn:disabled{ opacity:0.25; }
+
+  .item{ display:flex; align-items:center; gap:10px; padding:11px 10px; background:var(--surface); border-radius:10px; margin-bottom:7px; transition:opacity .2s ease; }
+  .item.done{ opacity:0.5; }
+  .check{
+    width:24px; height:24px; border-radius:7px; border:2px solid var(--leaf);
+    display:flex; align-items:center; justify-content:center; flex-shrink:0; cursor:pointer;
+    color:var(--bg); font-size:15px; font-weight:800;
+  }
+  .item.done .check{ background:var(--leaf); }
+  .item-name{ flex:1; font-size:15.5px; font-weight:500; }
+  .item.done .item-name{ text-decoration:line-through; text-decoration-color:var(--danger); text-decoration-thickness:2px; }
+  .item-qty{ font-size:12.5px; color:var(--text-muted); background:var(--bg-2); padding:2px 8px; border-radius:8px; }
+  .item-who{ font-size:11px; color:var(--accent); font-weight:700; }
+  .del{ color:var(--text-muted); background:transparent; font-size:18px; padding:2px 4px; line-height:1; }
+  .del:active{ color:var(--danger); }
+
+  .empty{ text-align:center; color:var(--text-muted); padding:60px 20px 20px; font-size:15px; line-height:1.9; }
+  .empty .big{ font-size:40px; display:block; margin-bottom:10px; }
+
+  footer{
+    position:fixed; bottom:0; left:0; right:0; padding:12px 18px calc(14px + env(safe-area-inset-bottom));
+    background:linear-gradient(0deg, var(--bg) 60%, transparent); display:flex; gap:10px; justify-content:center;
+  }
+  .btn-clear{ background:var(--surface-2); color:var(--text); font-size:13.5px; font-weight:600; padding:11px 18px; border-radius:999px; border:1px solid var(--chalk-line); }
+  .status{ position:fixed; top:10px; left:12px; font-size:11px; color:var(--text-muted); display:flex; align-items:center; gap:5px; opacity:.8; z-index:5;}
+  .dot{ width:7px; height:7px; border-radius:50%; background:var(--leaf); }
+  .dot.off{ background:var(--danger); }
+
+  /* modals */
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(10,15,12,0.75); display:none;
+    align-items:flex-end; justify-content:center; z-index:20;
+  }
+  .modal-overlay.open{ display:flex; }
+  .modal-box{
+    background:var(--bg-2); width:100%; max-width:480px; max-height:85vh; overflow-y:auto;
+    border-radius:20px 20px 0 0; padding:18px; border:1px solid var(--chalk-line);
+  }
+  .modal-head{ display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+  .modal-head h2{ font-size:20px; margin:0; }
+  textarea{ width:100%; min-height:110px; resize:vertical; }
+  .btn-primary{ background:var(--accent); color:#241a05; font-weight:700; border-radius:10px; padding:11px 16px; margin-top:10px; width:100%; }
+  .recipe-row{ display:flex; align-items:center; gap:10px; padding:9px 4px; border-bottom:1px solid var(--chalk-line); font-size:14.5px; }
+  .recipe-row input{ width:18px; height:18px; }
+  .recipe-row span:nth-child(2){ flex:1; }
+
+  .stat-row{ display:flex; align-items:center; gap:10px; padding:8px 2px; }
+  .stat-label{ width:110px; font-size:13.5px; flex-shrink:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .stat-track{ flex:1; height:8px; background:var(--surface-2); border-radius:999px; overflow:hidden; }
+  .stat-fill{ height:100%; background:linear-gradient(90deg, var(--leaf), var(--accent)); }
+  .stat-count{ width:22px; text-align:left; font-size:12px; color:var(--text-muted); }
+
+  ::selection{ background:var(--accent); color:#241a05; }
+</style>
+</head>
+<body>
+
+<div class="status" id="status"><span class="dot" id="statusDot"></span><span id="statusText">מתחבר...</span></div>
+
+<header>
+  <div class="title-row">
+    <h1>הרשימה שלנו 🛒</h1>
+    <div class="header-actions">
+      <button class="icon-btn" id="openRecipe" title="הוספה ממתכון">📖</button>
+      <button class="icon-btn" id="openStats" title="סטטיסטיקה">📊</button>
+    </div>
+  </div>
+  <div class="subtitle">רשימת קניות משותפת ליוסף ואגם</div>
+  <div class="profiles">
+    <div class="chip" id="profileYosef">יוסף</div>
+    <div class="chip" id="profileAgam">אגם</div>
+  </div>
+</header>
+
+<div class="cart-wrap">
+  <div class="cart-top">
+    <span>בעגלה: <b id="doneCount">0</b> מתוך <b id="totalCount">0</b></span>
+    <span id="budgetText">—</span>
+  </div>
+  <div class="track"><div class="fill" id="progressFill"></div></div>
+</div>
+
+<div class="quick-add" id="quickAdd"></div>
+
+<div class="add-box">
+  <div class="add-row">
+    <input type="text" id="itemName" placeholder="מה חסר בבית?" autocomplete="off" list="productList">
+    <datalist id="productList"></datalist>
+    <button class="btn-add" id="addBtn">הוסיפו</button>
+  </div>
+  <div class="add-row2">
+    <select id="itemCategory"></select>
+    <input type="number" id="itemQty" placeholder="כמות" min="1">
+    <span id="priceHint"></span>
+  </div>
+</div>
+
+<main id="list"></main>
+
+<footer>
+  <button class="btn-clear" id="clearBtn">נקו פריטים שנקנו</button>
+</footer>
+
+<!-- Recipe modal -->
+<div class="modal-overlay" id="recipeModal">
+  <div class="modal-box">
+    <div class="modal-head"><h2>הוספה ממתכון</h2><button class="icon-btn" id="closeRecipe">✕</button></div>
+    <div class="subtitle" style="margin-bottom:10px;">הדביקו את רשימת הרכיבים, שורה לכל רכיב (למשל: "2 ביצים" או "500 גרם עוף")</div>
+    <textarea id="recipeText" placeholder="2 ביצים&#10;500 גרם עוף&#10;1 בצל&#10;כוס אורז"></textarea>
+    <button class="btn-primary" id="parseRecipeBtn">נתחו רכיבים</button>
+    <div id="recipePreview"></div>
+    <button class="btn-primary" id="confirmRecipeBtn" style="display:none; background:var(--leaf);">הוסיפו לרשימה</button>
+  </div>
+</div>
+
+<!-- Stats modal -->
+<div class="modal-overlay" id="statsModal">
+  <div class="modal-box">
+    <div class="modal-head"><h2>מה קונים הכי הרבה</h2><button class="icon-btn" id="closeStats">✕</button></div>
+    <div id="statsBody"></div>
+  </div>
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
