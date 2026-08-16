@@ -336,13 +336,16 @@ if(db){
   }, err => console.error(err));
 }
 
-function renderQuickAdd(){
+/** סופר פריטים גם מהיסטוריית "נקנה ונוקה מהרשימה" וגם מקבלות סרוקות - כדי שסריקת קבלה תשפיע גם על הסטטיסטיקה */
+function aggregatedPurchaseCounts(){
   const counts = {};
-  for(const h of historyDocs){
-    const key = (h.name || '').trim();
-    if(!key) continue;
-    counts[key] = (counts[key] || 0) + 1;
-  }
+  for (const h of historyDocs) { const key = (h.name || '').trim(); if (key) counts[key] = (counts[key] || 0) + 1; }
+  for (const r of receipts) { for (const it of (r.items || [])) { const key = (it.name || '').trim(); if (key) counts[key] = (counts[key] || 0) + 1; } }
+  return counts;
+}
+
+function renderQuickAdd(){
+  const counts = aggregatedPurchaseCounts();
   const activeNames = new Set(items.map(i => (i.name||'').trim().toLowerCase()));
   const top = Object.entries(counts)
     .filter(([name]) => !activeNames.has(name.toLowerCase()))
@@ -578,15 +581,23 @@ document.getElementById('confirmRecipeBtn').onclick = async () => {
   recipeModal.classList.remove('open');
 };
 
-/* ---------- stats + CSV export ---------- */
+/* ---------- stats + CSV export + price comparison (tabs) ---------- */
 const statsModal = document.getElementById('statsModal');
-document.getElementById('openStats').onclick = () => { statsModal.classList.add('open'); renderStats(); };
+document.getElementById('openStats').onclick = () => { statsModal.classList.add('open'); switchStatsTab('most'); };
 document.getElementById('closeStats').onclick = () => statsModal.classList.remove('open');
+document.getElementById('tabMostBought').onclick = () => switchStatsTab('most');
+document.getElementById('tabPriceCompare').onclick = () => switchStatsTab('compare');
+function switchStatsTab(which){
+  document.getElementById('tabMostBought').classList.toggle('active', which==='most');
+  document.getElementById('tabPriceCompare').classList.toggle('active', which==='compare');
+  document.getElementById('statsBody').style.display = which==='most' ? 'block':'none';
+  document.getElementById('priceCompareBody').style.display = which==='compare' ? 'block':'none';
+  if(which==='most') renderStats(); else renderPriceCompare();
+}
 function renderStats(){
   const box = document.getElementById('statsBody');
-  if(!historyDocs.length){ box.innerHTML = '<div class="empty">עדיין אין היסטוריית קניות.<br>ברגע שתסמנו ותנקו פריטים, הנתונים יופיעו כאן.</div>'; return; }
-  const counts = {};
-  for(const h of historyDocs){ const key = (h.name||'').trim(); if(!key) continue; counts[key] = (counts[key] || 0) + 1; }
+  const counts = aggregatedPurchaseCounts();
+  if(!Object.keys(counts).length){ box.innerHTML = '<div class="empty">עדיין אין נתונים.<br>ברגע שתסמנו ותנקו פריטים, או שתסרקו קבלה, הנתונים יופיעו כאן.</div>'; return; }
   const top = Object.entries(counts).sort((a,b) => b[1]-a[1]).slice(0, 10);
   const max = top[0]?.[1] || 1;
   box.innerHTML = top.map(([name, count]) => `<div class="stat-row"><div class="stat-label">${escapeHtml(name)}</div><div class="stat-track"><div class="stat-fill" style="width:${(count/max)*100}%"></div></div><div class="stat-count">${count}</div></div>`).join('');
@@ -645,6 +656,198 @@ document.getElementById('templatesList').addEventListener('click', async (e) => 
   const delEl = e.target.closest('[data-deltpl]');
   if (delEl) { try { await deleteDoc(doc(db, 'templates', delEl.dataset.deltpl)); } catch(err){ console.error(err); } }
 });
+
+/* ---------- receipt scanning (on-device OCR via Tesseract.js) + price comparison ---------- */
+let receipts = [];
+if (db) { onSnapshot(collection(db, 'receipts'), snap => { receipts = snap.docs.map(d => ({ id:d.id, ...d.data() })); renderQuickAdd(); renderStats(); }); }
+
+function loadScript(src){
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+    const s = document.createElement('script');
+    s.src = src; s.onload = () => resolve(); s.onerror = () => reject(new Error('script load failed'));
+    document.head.appendChild(s);
+  });
+}
+async function ensureTesseract(){
+  if (window.Tesseract) return;
+  await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js');
+}
+
+async function ensurePdfJs(){
+  if (window.pdfjsLib) return;
+  await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.js');
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.js';
+}
+
+/** מחלץ טקסט אמיתי מה-PDF (קבלה דיגיטלית). מחזיר גם את אובייקט ה-pdf למקרה שנצטרך OCR כגיבוי. */
+async function extractPdfText(file){
+  await ensurePdfJs();
+  const buf = await file.arrayBuffer();
+  const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+  let fullText = '';
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    fullText += content.items.map(it => it.str).join(' ') + '\n';
+  }
+  return { text: fullText, pdf };
+}
+
+/** גיבוי: אם ל-PDF אין שכבת טקסט (קובץ סרוק כתמונה), מרנדרים את העמוד הראשון לתמונה ומריצים OCR עליה. */
+async function ocrPdfFirstPage(pdf){
+  const page = await pdf.getPage(1);
+  const viewport = page.getViewport({ scale: 2 });
+  const canvas = document.createElement('canvas');
+  canvas.width = viewport.width; canvas.height = viewport.height;
+  await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+  await ensureTesseract();
+  const worker = await window.Tesseract.createWorker('heb+eng');
+  const { data:{ text } } = await worker.recognize(canvas.toDataURL('image/png'));
+  await worker.terminate();
+  return text;
+}
+
+const STORE_NAMES = ['שופרסל','רמי לוי','קרפור','carrefour','ויקטורי','victory','יינות ביתן','טיב טעם','אושר עד','חצי חינם','מגה בעיר','מגה','yellow','am:pm','סופר פארם','super-pharm','היפר כהן','זול ובגדול','פרש מרקט'];
+const RECEIPT_SKIP = /(סה"?כ|סהכ|total|לתשלום|עודף|מזומן|אשראי|תודה|receipt|קבלה|עוסק|מס\s*עוסק|ח\.פ|טלפון|כתובת|תאריך|שעה|קופה|קופאי|invoice|תשלום|מע"?מ|עגלה|פריטים|כמות)/i;
+
+function parseReceipt(text){
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  let store = null;
+  for (const line of lines.slice(0, 8)) {
+    const found = STORE_NAMES.find(s => line.toLowerCase().includes(s.toLowerCase()));
+    if (found) { store = found; break; }
+  }
+  if (!store) store = lines[0] || 'חנות לא ידועה';
+
+  let total = null;
+  const totalLine = lines.find(l => /(סה"?כ|לתשלום|total)/i.test(l));
+  if (totalLine) { const m = totalLine.match(/(\d{1,4}[.,]\d{2})/); if (m) total = parseFloat(m[1].replace(',', '.')); }
+
+  const items = [];
+  for (const line of lines) {
+    if (RECEIPT_SKIP.test(line)) continue;
+    const m = line.match(/^(.{2,40}?)[\s.]{1,}(\d{1,4}[.,]\d{2})\s*(₪|ש"ח)?\s*$/);
+    if (!m) continue;
+    let name = m[1].replace(/[.\-_*]{2,}/g, ' ').replace(/\s{2,}/g, ' ').trim();
+    let price = parseFloat(m[2].replace(',', '.'));
+    if (!name || price <= 0 || price > 800 || /^\d+$/.test(name)) continue;
+    const match = matchProduct(name);
+    items.push({ raw: line, name: match ? match.name : name, category: match ? match.category : 'other', price });
+  }
+  return { store, total, items };
+}
+
+const receiptModal = document.getElementById('receiptModal');
+const receiptFile = document.getElementById('receiptFile');
+document.getElementById('openReceipt').onclick = () => receiptFile.click();
+document.getElementById('closeReceipt').onclick = () => receiptModal.classList.remove('open');
+
+receiptFile.addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  receiptModal.classList.add('open');
+  const statusEl = document.getElementById('receiptStatus');
+  const previewEl = document.getElementById('receiptPreview');
+  previewEl.innerHTML = ''; previewEl.dataset.items = '[]'; previewEl.dataset.total = '';
+  document.getElementById('confirmReceiptBtn').style.display = 'none';
+  try {
+    let text;
+    if (file.type === 'application/pdf') {
+      statusEl.textContent = 'קורא את קובץ ה-PDF...';
+      const { text: pdfText, pdf } = await extractPdfText(file);
+      if (pdfText.trim().length > 20) {
+        text = pdfText; // קבלה דיגיטלית עם שכבת טקסט אמיתית - הכי מדויק
+      } else {
+        statusEl.textContent = 'ה-PDF נראה כתמונה סרוקה, מריץ זיהוי טקסט...';
+        text = await ocrPdfFirstPage(pdf);
+      }
+    } else {
+      statusEl.textContent = 'טוען מנוע זיהוי טקסט... (בפעם הראשונה זה לוקח קצת יותר זמן)';
+      await ensureTesseract();
+      statusEl.textContent = 'קורא את הקבלה... (יכול לקחת עד כ-20 שניות)';
+      const worker = await window.Tesseract.createWorker('heb+eng');
+      const { data:{ text: t } } = await worker.recognize(file);
+      await worker.terminate();
+      text = t;
+    }
+    const parsed = parseReceipt(text);
+    renderReceiptPreview(parsed);
+    statusEl.textContent = parsed.items.length
+      ? `זוהו ${parsed.items.length} פריטים. בדקו ותקנו לפני שמירה — זיהוי טקסט אוטומטי לא תמיד מדויק במאה אחוז.`
+      : 'לא זוהו פריטים ברורים. אפשר לנסות תמונה/קובץ אחר.';
+  } catch(err) {
+    console.error(err);
+    statusEl.textContent = 'שגיאה בזיהוי הקבלה. נסו קובץ אחר.';
+  }
+  receiptFile.value = '';
+});
+
+function renderReceiptPreview(parsed){
+  const previewEl = document.getElementById('receiptPreview');
+  previewEl.dataset.total = parsed.total ?? '';
+  previewEl.dataset.items = JSON.stringify(parsed.items);
+  previewEl.innerHTML = `
+    <div class="add-row2" style="margin:10px 0 4px;">
+      <input type="text" id="receiptStore" value="${escapeHtml(parsed.store)}" placeholder="שם החנות" style="flex:1;">
+    </div>
+    ${parsed.items.map((it,i) => `
+      <label class="recipe-row">
+        <input type="checkbox" checked data-idx="${i}">
+        <input type="text" class="r-name" data-idx="${i}" value="${escapeHtml(it.name)}">
+        <input type="number" step="0.1" class="r-price" data-idx="${i}" value="${it.price}">
+      </label>`).join('')}
+    ${parsed.total ? `<div class="subtitle" style="margin-top:8px;">סה"כ שזוהה בקבלה: ₪${parsed.total.toFixed(2)}</div>` : ''}
+  `;
+  document.getElementById('confirmReceiptBtn').style.display = parsed.items.length ? 'block' : 'none';
+}
+
+document.getElementById('confirmReceiptBtn').onclick = async () => {
+  if (!db) return;
+  const previewEl = document.getElementById('receiptPreview');
+  const baseItems = JSON.parse(previewEl.dataset.items || '[]');
+  const byIdx = {};
+  previewEl.querySelectorAll('input[type=checkbox][data-idx]').forEach(cb => { byIdx[cb.dataset.idx] = { checked: cb.checked }; });
+  previewEl.querySelectorAll('.r-name').forEach(inp => { if(byIdx[inp.dataset.idx]) byIdx[inp.dataset.idx].name = inp.value.trim(); });
+  previewEl.querySelectorAll('.r-price').forEach(inp => { if(byIdx[inp.dataset.idx]) byIdx[inp.dataset.idx].price = parseFloat(inp.value) || 0; });
+  const finalItems = Object.entries(byIdx)
+    .filter(([,v]) => v.checked && v.name && v.price > 0)
+    .map(([idx,v]) => ({ name: v.name, price: v.price, category: baseItems[idx]?.category || 'other' }));
+  if (!finalItems.length) { showToast('לא נבחרו פריטים לשמירה'); return; }
+  const store = (document.getElementById('receiptStore').value || '').trim() || 'חנות לא ידועה';
+  const totalStr = previewEl.dataset.total;
+  const total = totalStr ? parseFloat(totalStr) : finalItems.reduce((s,i) => s+i.price, 0);
+  try {
+    await addDoc(collection(db, 'receipts'), { store, items: finalItems, total, scannedBy: profile, scannedAt: serverTimestamp() });
+    showToast('הקבלה נשמרה');
+    receiptModal.classList.remove('open');
+  } catch(e){ console.error(e); showToast('שגיאה בשמירת הקבלה'); }
+};
+
+function renderPriceCompare(){
+  const box = document.getElementById('priceCompareBody');
+  if (!receipts.length) { box.innerHTML = '<div class="empty">עדיין אין קבלות סרוקות.<br>סרקו קבלה (📸) כדי להתחיל לעקוב אחרי מחירים.</div>'; return; }
+  const agg = {};
+  for (const r of receipts) {
+    const store = r.store || 'לא ידוע';
+    for (const it of (r.items || [])) {
+      const key = (it.name || '').trim();
+      if (!key) continue;
+      agg[key] = agg[key] || {};
+      if (!agg[key][store] || it.price < agg[key][store].price) agg[key][store] = { price: it.price };
+    }
+  }
+  const comparable = Object.entries(agg).filter(([, stores]) => Object.keys(stores).length >= 2);
+  if (!comparable.length) { box.innerHTML = '<div class="empty">עדיין אין מספיק קבלות ממספר חנויות שונות לאותו מוצר כדי להשוות.<br>ככל שתסרקו יותר קבלות מחנויות שונות, ההשוואה תתמלא.</div>'; return; }
+  box.innerHTML = comparable.map(([name, stores]) => {
+    const entries = Object.entries(stores).sort((a,b) => a[1].price - b[1].price);
+    const min = entries[0][1].price;
+    return `<div class="compare-card">
+      <div class="compare-name">${escapeHtml(name)}</div>
+      ${entries.map(([store,d]) => `<div class="compare-row ${d.price===min?'cheapest':''}"><span>${escapeHtml(store)}</span><span>₪${d.price.toFixed(2)}</span></div>`).join('')}
+    </div>`;
+  }).join('');
+}
 
 if(!db){ setStatus(false, 'לא הוגדר Firebase'); }
 if('serviceWorker' in navigator){ window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(()=>{}); }); }

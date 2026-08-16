@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v5';
+const CACHE_VERSION = 'v7';
 const CACHE_NAME = `shopping-list-${CACHE_VERSION}`;
 const ASSETS = [
   './',
