@@ -676,8 +676,9 @@ async function ensureTesseract(){
 
 async function ensurePdfJs(){
   if (window.pdfjsLib) return;
-  await loadScript('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/legacy/build/pdf.min.js');
-  window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/legacy/build/pdf.worker.min.js';
+  const mod = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/legacy/build/pdf.min.mjs');
+  window.pdfjsLib = mod;
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/legacy/build/pdf.worker.min.mjs';
 }
 
 /** מחלץ טקסט אמיתי מה-PDF (קבלה דיגיטלית). מחזיר גם את אובייקט ה-pdf למקרה שנצטרך OCR כגיבוי. */
